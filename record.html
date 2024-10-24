@@ -24,6 +24,7 @@
       #status {
         font-size: 16px;
         margin-top: 10px;
+        display: none; /* Hidden by default */
       }
 
       /* Style the audio element */
@@ -40,9 +41,6 @@
     <button id="start">Start Recording</button>
     <button id="stop">Stop Recording</button>
 
-    <!-- Status message -->
-    <p id="status">Press "Start Recording" to begin</p>
-
     <!-- Audio element for playback -->
     <audio id="audioPlayback" controls></audio>
 
@@ -57,7 +55,6 @@
 
       const startButton = document.getElementById('start');
       const stopButton = document.getElementById('stop');
-      const statusText = document.getElementById('status');
       const audioPlayback = document.getElementById('audioPlayback');
       const downloadButton = document.getElementById('download');
 
@@ -66,7 +63,6 @@
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
         mediaRecorder.start();
-        statusText.innerText = "Recording...";
         audioChunks = [];
 
         mediaRecorder.ondataavailable = (event) => {
@@ -83,15 +79,12 @@
           // Show the download button and link it to the audio
           downloadButton.href = audioUrl;
           downloadButton.style.display = 'block'; // Show the download button
-
-          statusText.innerText = "Recording stopped. You can now play or download the audio.";
         };
       };
 
       // Stop recording when the "Stop Recording" button is clicked
       stopButton.onclick = () => {
         mediaRecorder.stop();
-        statusText.innerText = "Processing audio...";
       };
     </script>
   </body>
