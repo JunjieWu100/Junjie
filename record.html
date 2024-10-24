@@ -29,7 +29,7 @@
     </style>
   </head>
   <body>
-    <h2>Record Audio</h2>
+    <h2>Record and Play Audio</h2>
 
     <!-- Start and Stop buttons for recording -->
     <button id="start">Start Recording</button>
@@ -46,6 +46,9 @@
       <button>Download Audio</button>
     </a>
 
+    <!-- Button for user to explicitly play the recorded audio -->
+    <button id="playAudio" style="display:none;">Play Recorded Audio</button>
+
     <script>
       let mediaRecorder;
       let audioChunks = [];
@@ -55,6 +58,7 @@
       const statusText = document.getElementById('status');
       const audioPlayback = document.getElementById('audioPlayback');
       const downloadButton = document.getElementById('download');
+      const playAudioButton = document.getElementById('playAudio');
 
       // Start recording audio
       startButton.onclick = async () => {
@@ -75,11 +79,17 @@
           // Set the audio for playback
           audioPlayback.src = audioUrl;
 
-          // Enable the download button with the audio URL
+          // Show the download button and play button after recording
           downloadButton.href = audioUrl;
           downloadButton.style.display = 'inline'; // Show the download button
+          playAudioButton.style.display = 'inline'; // Show the Play Audio button
 
           statusText.innerText = "Recording stopped. You can now play or download the audio.";
+
+          // Add event listener to play the audio when the button is clicked
+          playAudioButton.onclick = () => {
+            audioPlayback.play();  // Play audio on user interaction
+          };
         };
       };
 
