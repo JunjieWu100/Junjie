@@ -2,18 +2,18 @@
 <html>
   <body>
     <h2>Record Audio</h2>
-    
-    <!-- Buttons to start and stop recording -->
+
+    <!-- Start and Stop buttons for recording -->
     <button id="start">Start Recording</button>
     <button id="stop">Stop Recording</button>
-    
+
     <!-- Status message -->
     <p id="status"></p>
-    
+
     <!-- Audio element for playback -->
     <audio id="audioPlayback" controls></audio>
-    
-    <!-- Button to download the recorded audio -->
+
+    <!-- Hidden Download button (becomes visible after recording) -->
     <a id="download" href="#" download="recorded_audio.wav" style="display:none;">
       <button>Download Audio</button>
     </a>
@@ -21,13 +21,14 @@
     <script>
       let mediaRecorder;
       let audioChunks = [];
+
       const startButton = document.getElementById('start');
       const stopButton = document.getElementById('stop');
       const statusText = document.getElementById('status');
       const audioPlayback = document.getElementById('audioPlayback');
       const downloadButton = document.getElementById('download');
 
-      // Start recording when the "Start Recording" button is clicked
+      // Start recording audio
       startButton.onclick = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
@@ -35,28 +36,26 @@
         statusText.innerText = "Recording...";
         audioChunks = [];
 
-        // Collect audio data when it's available
         mediaRecorder.ondataavailable = (event) => {
           audioChunks.push(event.data);
         };
 
-        // When the recording stops, create the audio file
         mediaRecorder.onstop = () => {
           const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
           const audioUrl = URL.createObjectURL(audioBlob);
 
-          // Set the audio URL for playback
+          // Set the playback source to the audio URL
           audioPlayback.src = audioUrl;
 
-          // Show and set up the download button
+          // Show and set the download button URL
           downloadButton.href = audioUrl;
-          downloadButton.style.display = 'inline'; // Show the download button
+          downloadButton.style.display = 'inline'; // Make the download button visible
 
           statusText.innerText = "Recording stopped. You can now download the audio.";
         };
       };
 
-      // Stop recording when the "Stop Recording" button is clicked
+      // Stop recording
       stopButton.onclick = () => {
         mediaRecorder.stop();
       };
