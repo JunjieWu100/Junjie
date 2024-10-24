@@ -1,5 +1,33 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    <style>
+      /* Style the buttons */
+      button {
+        padding: 15px 30px;
+        font-size: 18px;
+        margin: 10px;
+        cursor: pointer;
+      }
+
+      /* Style the audio playback */
+      audio {
+        margin-top: 20px;
+        width: 100%;
+      }
+
+      /* Center the content */
+      body {
+        text-align: center;
+        font-family: Arial, sans-serif;
+      }
+
+      #status {
+        font-size: 16px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
   <body>
     <h2>Record Audio</h2>
 
@@ -8,12 +36,12 @@
     <button id="stop">Stop Recording</button>
 
     <!-- Status message -->
-    <p id="status"></p>
+    <p id="status">Press "Start Recording" to begin</p>
 
     <!-- Audio element for playback -->
     <audio id="audioPlayback" controls></audio>
 
-    <!-- Hidden Download button (becomes visible after recording) -->
+    <!-- Download button (appears after recording) -->
     <a id="download" href="#" download="recorded_audio.wav" style="display:none;">
       <button>Download Audio</button>
     </a>
@@ -44,20 +72,21 @@
           const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
           const audioUrl = URL.createObjectURL(audioBlob);
 
-          // Set the playback source to the audio URL
+          // Set the audio for playback
           audioPlayback.src = audioUrl;
 
-          // Show and set the download button URL
+          // Enable the download button with the audio URL
           downloadButton.href = audioUrl;
-          downloadButton.style.display = 'inline'; // Make the download button visible
+          downloadButton.style.display = 'inline'; // Show the download button
 
-          statusText.innerText = "Recording stopped. You can now download the audio.";
+          statusText.innerText = "Recording stopped. You can now play or download the audio.";
         };
       };
 
-      // Stop recording
+      // Stop recording when the "Stop Recording" button is clicked
       stopButton.onclick = () => {
         mediaRecorder.stop();
+        statusText.innerText = "Processing audio...";
       };
     </script>
   </body>
