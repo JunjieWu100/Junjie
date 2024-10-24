@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h2>Record Audio</h2>
+    <button id="start">Start Recording</button>
+    <button id="stop">Stop Recording</button>
+    <p id="status"></p>
+    <audio id="audioPlayback" controls></audio>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+
+      const startButton = document.getElementById('start');
+      const stopButton = document.getElementById('stop');
+      const statusText = document.getElementById('status');
+      const audioPlayback = document.getElementById('audioPlayback');
+
+      startButton.onclick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.start();
+        statusText.innerText = "Recording...";
+
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          audioPlayback.src = audioUrl;
+          statusText.innerText = "Recording stopped.";
+          audioChunks = [];
+        };
+      };
+
+      stopButton.onclick = () => {
+        mediaRecorder.stop();
+      };
+    </script>
+  </body>
+</html>
