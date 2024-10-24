@@ -1,39 +1,39 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <style>
-      /* Style the buttons with equal size and box-like appearance */
-      button {
-        padding: 15px 30px;
-        font-size: 18px;
-        margin: 10px;
-        cursor: pointer;
-        width: 200px; /* Fixed width for uniformity */
-        height: 50px; /* Fixed height for uniformity */
-        display: block;
-        margin-left: auto;
-        margin-right: auto;
-      }
+        /* Style the buttons with equal size and box-like appearance */
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+            width: 200px; /* Fixed width for uniformity */
+            height: 50px; /* Fixed height for uniformity */
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }
 
-      /* Center the content */
-      body {
-        text-align: center;
-        font-family: Arial, sans-serif;
-      }
+        /* Center the content */
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
 
-      #status {
-        font-size: 16px;
-        margin-top: 10px;
-      }
+        #status {
+            font-size: 16px;
+            margin-top: 10px;
+        }
 
-      /* Style the audio element */
-      audio {
-        margin-top: 20px;
-        width: 100%;
-      }
+        /* Style the audio element */
+        audio {
+            margin-top: 20px;
+            width: 100%;
+        }
     </style>
-  </head>
-  <body>
+</head>
+<body>
     <h2>Record and Transcribe Audio</h2>
 
     <!-- Start and Stop buttons for recording -->
@@ -42,7 +42,7 @@
 
     <!-- Download button (always visible, below Stop and above Audio) -->
     <a id="download" href="#" download="recorded_audio.wav">
-      <button>Download Audio</button>
+        <button>Download Audio</button>
     </a>
 
     <!-- Audio element for playback (placed below the Download button) -->
@@ -53,116 +53,124 @@
     <p id="transcriptionText">Transcription will appear here after recording.</p>
 
     <script>
-      let mediaRecorder;
-      let audioChunks = [];
+        let mediaRecorder;
+        let audioChunks = [];
 
-      const startButton = document.getElementById('start');
-      const stopButton = document.getElementById('stop');
-      const audioPlayback = document.getElementById('audioPlayback');
-      const downloadButton = document.getElementById('download');
-      const transcriptionText = document.getElementById('transcriptionText');
+        const startButton = document.getElementById('start');
+        const stopButton = document.getElementById('stop');
+        const audioPlayback = document.getElementById('audioPlayback');
+        const downloadButton = document.getElementById('download');
+        const transcriptionText = document.getElementById('transcriptionText');
 
-      // Start recording audio
-      startButton.onclick = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.start();
-        audioChunks = [];
+        // Start recording audio
+        startButton.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.start();
+            audioChunks = [];
 
-        mediaRecorder.ondataavailable = (event) => {
-          audioChunks.push(event.data);
+            mediaRecorder.ondataavailable = (event) => {
+                audioChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                // Set the audio for playback
+                audioPlayback.src = audioUrl;
+
+                // Update the download button with the new audio URL
+                downloadButton.href = audioUrl;
+
+                // Send the audio to AssemblyAI for transcription
+                uploadAndTranscribe(audioBlob);
+            };
         };
 
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-          const audioUrl = URL.createObjectURL(audioBlob);
-
-          // Set the audio for playback
-          audioPlayback.src = audioUrl;
-
-          // Update the download button with the new audio URL
-          downloadButton.href = audioUrl;
-
-          // Send the audio to AssemblyAI for transcription
-          uploadAndTranscribe(audioBlob);
+        // Stop recording when the "Stop Recording" button is clicked
+        stopButton.onclick = () => {
+            mediaRecorder.stop();
         };
-      };
 
-      // Stop recording when the "Stop Recording" button is clicked
-      stopButton.onclick = () => {
-        mediaRecorder.stop();
-      };
+        // Function to upload audio and get transcription
+        async function uploadAndTranscribe(audioBlob) {
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = async () => {
+                const base64data = reader.result.split(',')[1]; // Extract base64 portion
+                console.log("Base64 Audio Data:", base64data); // Log the base64 data
 
-      // Function to upload audio and get transcription
-      async function uploadAndTranscribe(audioBlob) {
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64data = reader.result.split(',')[1]; // Extract base64 portion
-          console.log("Base64 Audio Data:", base64data); // Log the base64 data
+                try {
+                    // Upload the audio to AssemblyAI for transcription
+                    const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+                        method: 'POST',
+                        headers: {
+                            'authorization': '57468fcab70249bdb924e8288a35166d', // Your actual API key
+                            'content-type': 'application/json',
+                        },
+                        body: JSON.stringify({ audio_data: base64data })
+                    });
 
-          try {
-            // Upload the audio to AssemblyAI for transcription
-            const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
-              method: 'POST',
-              headers: {
-                'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({ audio_data: base64data })
-            });
+                    const uploadResult = await uploadResponse.json();
+                    console.log("Upload Result:", uploadResult); // Log the upload result
 
-            const uploadResult = await uploadResponse.json();
-            console.log("Upload Result:", uploadResult); // Log the upload result
+                    if (!uploadResponse.ok) {
+                        throw new Error(`Upload failed: ${uploadResult.error}`);
+                    }
 
-            if (!uploadResponse.ok) {
-              throw new Error(`Upload failed: ${uploadResult.error}`);
-            }
+                    const { upload_url } = uploadResult;
 
-            const { upload_url } = uploadResult;
+                    // Request transcription from AssemblyAI
+                    const transcriptionResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+                        method: 'POST',
+                        headers: {
+                            'authorization': '57468fcab70249bdb924e8288a35166d', // Your actual API key
+                            'content-type': 'application/json',
+                        },
+                        body: JSON.stringify({ audio_url: upload_url })
+                    });
 
-            // Request transcription from AssemblyAI
-            const transcriptionResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
-              method: 'POST',
-              headers: {
-                'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({ audio_url: upload_url })
-            });
+                    const transcriptionData = await transcriptionResponse.json();
+                    console.log("Transcription Data:", transcriptionData); // Log the transcription data
 
-            const transcriptionData = await transcriptionResponse.json();
-            console.log("Transcription Data:", transcriptionData); // Log the transcription data
+                    if (!transcriptionResponse.ok) {
+                        throw new Error(`Transcription request failed: ${transcriptionData.error}`);
+                    }
 
-            if (!transcriptionResponse.ok) {
-              throw new Error(`Transcription request failed: ${transcriptionData.error}`);
-            }
+                    // Poll for transcription completion
+                    let transcriptionStatus = transcriptionData.status;
+                    while (transcriptionStatus !== 'completed') {
+                        const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
+                            method: 'GET',
+                            headers: {
+                                'authorization': '57468fcab70249bdb924e8288a35166d', // Your actual API key
+                            },
+                        });
+                        const statusData = await statusResponse.json();
+                        console.log("Transcription Status:", statusData); // Log the transcription status
 
-            // Poll for transcription completion
-            let transcriptionStatus = transcriptionData.status;
-            while (transcriptionStatus !== 'completed') {
-              const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
-                method: 'GET',
-                headers: {
-                  'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
-                },
-              });
-              const statusData = await statusResponse.json();
-              console.log("Transcription Status:", statusData); // Log the transcription status
-              transcriptionStatus = statusData.status;
+                        // Check for errors in transcription
+                        if (statusData.status === 'error') {
+                            console.error("Transcription Error Details:", statusData);
+                            transcriptionText.innerText = "An error occurred during transcription. Please check the console for details.";
+                            return; // Exit the loop
+                        }
 
-              if (transcriptionStatus === 'completed') {
-                transcriptionText.innerText = statusData.text; // Display transcription
-              }
+                        transcriptionStatus = statusData.status;
 
-              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before checking again
-            }
-          } catch (error) {
-            console.error("Error during transcription process:", error);
-            transcriptionText.innerText = "An error occurred during transcription.";
-          }
-        };
-      }
+                        if (transcriptionStatus === 'completed') {
+                            transcriptionText.innerText = statusData.text; // Display transcription
+                        }
+
+                        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before checking again
+                    }
+                } catch (error) {
+                    console.error("Error during transcription process:", error);
+                    transcriptionText.innerText = "An error occurred during transcription.";
+                }
+            };
+        }
     </script>
-  </body>
+</body>
 </html>
