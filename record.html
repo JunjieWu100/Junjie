@@ -41,13 +41,13 @@
     <button id="start">Start Recording</button>
     <button id="stop">Stop Recording</button>
 
-    <!-- Audio element for playback -->
-    <audio id="audioPlayback" controls></audio>
-
-    <!-- Download button (appears after recording, placed under stop button) -->
-    <a id="download" href="#" download="recorded_audio.wav" style="display:none;">
+    <!-- Download button (always visible, below Stop and above Audio) -->
+    <a id="download" href="#" download="recorded_audio.wav">
       <button>Download Audio</button>
     </a>
+
+    <!-- Audio element for playback (placed below the Download button) -->
+    <audio id="audioPlayback" controls></audio>
 
     <script>
       let mediaRecorder;
@@ -76,9 +76,8 @@
           // Set the audio for playback
           audioPlayback.src = audioUrl;
 
-          // Show the download button and link it to the audio
+          // Update the download button with the new audio URL
           downloadButton.href = audioUrl;
-          downloadButton.style.display = 'block'; // Show the download button
         };
       };
 
