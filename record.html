@@ -2,18 +2,17 @@
 <html>
   <head>
     <style>
-      /* Style the buttons */
+      /* Style the buttons with equal size and box-like appearance */
       button {
         padding: 15px 30px;
         font-size: 18px;
         margin: 10px;
         cursor: pointer;
-      }
-
-      /* Style the audio playback */
-      audio {
-        margin-top: 20px;
-        width: 100%;
+        width: 200px; /* Fixed width for uniformity */
+        height: 50px; /* Fixed height for uniformity */
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
       }
 
       /* Center the content */
@@ -26,10 +25,16 @@
         font-size: 16px;
         margin-top: 10px;
       }
+
+      /* Style the audio element */
+      audio {
+        margin-top: 20px;
+        width: 100%;
+      }
     </style>
   </head>
   <body>
-    <h2>Record and Play Audio</h2>
+    <h2>Record Audio</h2>
 
     <!-- Start and Stop buttons for recording -->
     <button id="start">Start Recording</button>
@@ -41,13 +46,10 @@
     <!-- Audio element for playback -->
     <audio id="audioPlayback" controls></audio>
 
-    <!-- Download button (appears after recording) -->
+    <!-- Download button (appears after recording, placed under stop button) -->
     <a id="download" href="#" download="recorded_audio.wav" style="display:none;">
       <button>Download Audio</button>
     </a>
-
-    <!-- Button for user to explicitly play the recorded audio -->
-    <button id="playAudio" style="display:none;">Play Recorded Audio</button>
 
     <script>
       let mediaRecorder;
@@ -58,7 +60,6 @@
       const statusText = document.getElementById('status');
       const audioPlayback = document.getElementById('audioPlayback');
       const downloadButton = document.getElementById('download');
-      const playAudioButton = document.getElementById('playAudio');
 
       // Start recording audio
       startButton.onclick = async () => {
@@ -79,17 +80,11 @@
           // Set the audio for playback
           audioPlayback.src = audioUrl;
 
-          // Show the download button and play button after recording
+          // Show the download button and link it to the audio
           downloadButton.href = audioUrl;
-          downloadButton.style.display = 'inline'; // Show the download button
-          playAudioButton.style.display = 'inline'; // Show the Play Audio button
+          downloadButton.style.display = 'block'; // Show the download button
 
           statusText.innerText = "Recording stopped. You can now play or download the audio.";
-
-          // Add event listener to play the audio when the button is clicked
-          playAudioButton.onclick = () => {
-            audioPlayback.play();  // Play audio on user interaction
-          };
         };
       };
 
