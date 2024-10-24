@@ -35,7 +35,7 @@
     </style>
   </head>
   <body>
-    <h2>Record Audio</h2>
+    <h2>Record and Transcribe Audio</h2>
 
     <!-- Start and Stop buttons for recording -->
     <button id="start">Start Recording</button>
@@ -49,6 +49,10 @@
     <!-- Audio element for playback (placed below the Download button) -->
     <audio id="audioPlayback" controls></audio>
 
+    <!-- Transcription result -->
+    <h3>Transcription:</h3>
+    <p id="transcriptionText">Transcription will appear here after recording.</p>
+
     <script>
       let mediaRecorder;
       let audioChunks = [];
@@ -57,6 +61,7 @@
       const stopButton = document.getElementById('stop');
       const audioPlayback = document.getElementById('audioPlayback');
       const downloadButton = document.getElementById('download');
+      const transcriptionText = document.getElementById('transcriptionText');
 
       // Start recording audio
       startButton.onclick = async () => {
@@ -78,6 +83,9 @@
 
           // Update the download button with the new audio URL
           downloadButton.href = audioUrl;
+
+          // Send the audio to AssemblyAI for transcription
+          uploadAndTranscribe(audioBlob);
         };
       };
 
@@ -85,6 +93,59 @@
       stopButton.onclick = () => {
         mediaRecorder.stop();
       };
+
+      // Function to upload audio and get transcription
+      async function uploadAndTranscribe(audioBlob) {
+        // Convert the audioBlob to base64
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64data = reader.result.split(',')[1]; // Extract base64 portion
+
+          // Upload the audio to AssemblyAI for transcription
+          const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+            method: 'POST',
+            headers: {
+              'authorization': 'YOUR_ASSEMBLYAI_API_KEY', // Replace with your AssemblyAI API key
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ audio_data: base64data })
+          });
+
+          const { upload_url } = await uploadResponse.json();
+
+          // Request transcription from AssemblyAI
+          const transcriptionResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+            method: 'POST',
+            headers: {
+              'authorization': 'YOUR_ASSEMBLYAI_API_KEY', // Replace with your AssemblyAI API key
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ audio_url: upload_url })
+          });
+
+          const transcriptionData = await transcriptionResponse.json();
+
+          // Poll for transcription completion
+          let transcriptionStatus = transcriptionData.status;
+          while (transcriptionStatus !== 'completed') {
+            const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
+              method: 'GET',
+              headers: {
+                'authorization': 'YOUR_ASSEMBLYAI_API_KEY', // Replace with your AssemblyAI API key
+              },
+            });
+            const statusData = await statusResponse.json();
+            transcriptionStatus = statusData.status;
+
+            if (transcriptionStatus === 'completed') {
+              transcriptionText.innerText = statusData.text; // Display transcription
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before checking again
+          }
+        };
+      }
     </script>
   </body>
 </html>
