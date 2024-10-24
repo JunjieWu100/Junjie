@@ -106,7 +106,7 @@
           const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
             method: 'POST',
             headers: {
-              'authorization': 'YOUR_ASSEMBLYAI_API_KEY', // Replace with your AssemblyAI API key
+              'authorization': '57468fcab70249bdb924e8288a35166d', // Replace with your AssemblyAI API key
               'content-type': 'application/json',
             },
             body: JSON.stringify({ audio_data: base64data })
@@ -132,7 +132,7 @@
             const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
               method: 'GET',
               headers: {
-                'authorization': 'YOUR_ASSEMBLYAI_API_KEY', // Replace with your AssemblyAI API key
+                'authorization': '57468fcab70249bdb924e8288a35166d', // Replace with your AssemblyAI API key
               },
             });
             const statusData = await statusResponse.json();
