@@ -24,7 +24,6 @@
       #status {
         font-size: 16px;
         margin-top: 10px;
-        display: none; /* Hidden by default */
       }
 
       /* Style the audio element */
@@ -96,53 +95,71 @@
 
       // Function to upload audio and get transcription
       async function uploadAndTranscribe(audioBlob) {
-        // Convert the audioBlob to base64
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64data = reader.result.split(',')[1]; // Extract base64 portion
+          console.log("Base64 Audio Data:", base64data); // Log the base64 data
 
-          // Upload the audio to AssemblyAI for transcription
-          const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
-            method: 'POST',
-            headers: {
-              'authorization': '57468fcab70249bdb924e8288a35166d', // Replace with your AssemblyAI API key
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({ audio_data: base64data })
-          });
-
-          const { upload_url } = await uploadResponse.json();
-
-          // Request transcription from AssemblyAI
-          const transcriptionResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
-            method: 'POST',
-            headers: {
-              'authorization': '57468fcab70249bdb924e8288a35166d', // Replace with your AssemblyAI API key
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({ audio_url: upload_url })
-          });
-
-          const transcriptionData = await transcriptionResponse.json();
-
-          // Poll for transcription completion
-          let transcriptionStatus = transcriptionData.status;
-          while (transcriptionStatus !== 'completed') {
-            const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
-              method: 'GET',
+          try {
+            // Upload the audio to AssemblyAI for transcription
+            const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+              method: 'POST',
               headers: {
-                'authorization': '57468fcab70249bdb924e8288a35166d', // Replace with your AssemblyAI API key
+                'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
+                'content-type': 'application/json',
               },
+              body: JSON.stringify({ audio_data: base64data })
             });
-            const statusData = await statusResponse.json();
-            transcriptionStatus = statusData.status;
 
-            if (transcriptionStatus === 'completed') {
-              transcriptionText.innerText = statusData.text; // Display transcription
+            const uploadResult = await uploadResponse.json();
+            console.log("Upload Result:", uploadResult); // Log the upload result
+
+            if (!uploadResponse.ok) {
+              throw new Error(`Upload failed: ${uploadResult.error}`);
             }
 
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before checking again
+            const { upload_url } = uploadResult;
+
+            // Request transcription from AssemblyAI
+            const transcriptionResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+              method: 'POST',
+              headers: {
+                'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({ audio_url: upload_url })
+            });
+
+            const transcriptionData = await transcriptionResponse.json();
+            console.log("Transcription Data:", transcriptionData); // Log the transcription data
+
+            if (!transcriptionResponse.ok) {
+              throw new Error(`Transcription request failed: ${transcriptionData.error}`);
+            }
+
+            // Poll for transcription completion
+            let transcriptionStatus = transcriptionData.status;
+            while (transcriptionStatus !== 'completed') {
+              const statusResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptionData.id}`, {
+                method: 'GET',
+                headers: {
+                  'authorization': '57468fcab70249bdb924e8288a35166d', // Your API key here
+                },
+              });
+              const statusData = await statusResponse.json();
+              console.log("Transcription Status:", statusData); // Log the transcription status
+              transcriptionStatus = statusData.status;
+
+              if (transcriptionStatus === 'completed') {
+                transcriptionText.innerText = statusData.text; // Display transcription
+              }
+
+              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before checking again
+            }
+          } catch (error) {
+            console.error("Error during transcription process:", error);
+            transcriptionText.innerText = "An error occurred during transcription.";
           }
         };
       }
