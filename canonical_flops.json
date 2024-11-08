@@ -1,0 +1,52 @@
+{
+  "canonical_flops": [
+    {
+      "flop": "A♠ 7♠ 2♦",
+      "description": "High-card Ace flop with limited straight or flush potential; typically cautious play is advised."
+    },
+    {
+      "flop": "K♣ Q♠ 4♦",
+      "description": "High-card King with moderate connectivity, offering some straight potential but limited draws; generally cautious."
+    },
+    {
+      "flop": "Q♠ J♦ 9♣",
+      "description": "High-card Queen on a connected board with open-ended straight draws; encourages aggressive play."
+    },
+    {
+      "flop": "J♥ 10♠ 5♦",
+      "description": "High-card Jack with potential for straight draws but few flush possibilities; typically an aggressive board."
+    },
+    {
+      "flop": "10♣ 8♦ 3♠",
+      "description": "High-card Ten with some straight potential but no flush draws; balanced cautious to aggressive play."
+    },
+    {
+      "flop": "9♠ 6♠ 3♦",
+      "description": "High-card Nine with flush draw potential but limited straight connectivity; cautious play suggested."
+    },
+    {
+      "flop": "8♣ 5♠ 2♦",
+      "description": "High-card Eight on a disconnected board, few draw opportunities; cautious play is typical."
+    },
+    {
+      "flop": "7♦ 4♠ 3♣",
+      "description": "High-card Seven on a very disconnected board with minimal draw potential; favors cautious play."
+    },
+    {
+      "flop": "6♠ 5♦ 2♣",
+      "description": "High-card Six with some low-card straight potential; mostly cautious play."
+    },
+    {
+      "flop": "5♥ 3♦ 2♠",
+      "description": "High-card Five with low straight potential and limited draws; cautious play is typical."
+    },
+    {
+      "flop": "4♠ 2♣ 3♦",
+      "description": "High-card Four with low straight potential and minimal draws; generally encourages cautious play."
+    },
+    {
+      "flop": "3♠ 2♦ 2♣",
+      "description": "High-card Three with minimal connectivity; cautious play is recommended."
+    }
+  ]
+}
