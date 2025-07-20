@@ -1,0 +1,216 @@
+#!pip install ipywidgets
+import random
+import ipywidgets as widgets
+from IPython.display import display, clear_output
+
+# Constants
+STARTING_STACK = 100
+SMALL_BLIND = 1
+BIG_BLIND = 2
+MIN_BET = 1
+ranks = '23456789TJQKA'
+suits = 'cdhs'
+
+# Hand strength map
+def generate_strength_map():
+    strength_map = {}
+    all_hands = []
+    for r1 in ranks:
+        for r2 in ranks:
+            if r1 == r2:
+                all_hands.append(r1 + r2)
+            else:
+                all_hands.append(r1 + r2 + 's')
+                all_hands.append(r1 + r2 + 'o')
+    unique_hands = list(set(all_hands))
+    unique_hands.sort(key=lambda h: (ranks.index(h[0]), ranks.index(h[1])), reverse=True)
+    for i, h in enumerate(unique_hands):
+        strength_map[h] = round(1.0 - i / len(unique_hands), 3)
+    return strength_map
+
+strength_map = generate_strength_map()
+
+def get_hand_key(cards):
+    r1, r2 = cards[0][0], cards[1][0]
+    suited = cards[0][1] == cards[1][1]
+    if r1 == r2:
+        return r1 + r2
+    return ''.join(sorted([r1, r2], reverse=True)) + ('s' if suited else 'o')
+
+def get_strength(cards):
+    return strength_map.get(get_hand_key(cards), 0.4)
+
+def classify_board(board):
+    high_cards = sum(1 for c in board if c[0] in '89TJQKA')
+    suits_count = {s: 0 for s in suits}
+    ranks_count = {r: 0 for r in ranks}
+    for c in board:
+        suits_count[c[1]] += 1
+        ranks_count[c[0]] += 1
+    flush = any(v >= 3 for v in suits_count.values())
+    pair = any(v >= 2 for v in ranks_count.values())
+    if flush or pair or high_cards >= 3:
+        return 0.8
+    return 0.6
+
+def bot_decision(street, strength, texture):
+    if street == 'preflop':
+        if strength >= 0.7:
+            return 'raise'
+        elif strength >= 0.5:
+            return 'call'
+        return 'fold'
+    else:
+        if strength >= 0.8:
+            return 'bet', round(random.uniform(0.3, 0.5), 2)
+        elif 0.5 <= strength < 0.8:
+            return 'bet', round(random.uniform(0.75, 1.0), 2)
+        elif texture == 0.8:
+            if random.random() < 0.3:
+                return 'bluff', round(random.uniform(0.3, 0.5), 2)
+        return 'check', 0
+
+# Game state
+player_stack = STARTING_STACK
+bot_stack = STARTING_STACK
+dealer_button = 0
+
+def play_hand():
+    global player_stack, bot_stack, dealer_button
+
+    if player_stack <= 0:
+        player_stack = STARTING_STACK
+        print("Player rebuys to 100bb.")
+    if bot_stack <= 0:
+        bot_stack = STARTING_STACK
+        print("Bot rebuys to 100bb.")
+
+    clear_output()
+    deck = [r + s for r in ranks for s in suits]
+    random.shuffle(deck)
+    player_hand = [deck.pop(), deck.pop()]
+    bot_hand = [deck.pop(), deck.pop()]
+    board = [deck.pop() for _ in range(5)]
+    pot = 0
+    log = []
+
+    if dealer_button == 0:
+        player_stack -= SMALL_BLIND
+        bot_stack -= BIG_BLIND
+        pot += SMALL_BLIND + BIG_BLIND
+        log.append("Player posts SB (1), Bot posts BB (2)")
+    else:
+        bot_stack -= SMALL_BLIND
+        player_stack -= BIG_BLIND
+        pot += SMALL_BLIND + BIG_BLIND
+        log.append("Bot posts SB (1), Player posts BB (2)")
+
+    dealer_button = 1 - dealer_button
+    bot_strength = get_strength(bot_hand)
+    street_order = ['preflop', 'flop', 'turn', 'river']
+    board_progression = [[], board[:3], board[:4], board]
+    current_street = 0
+
+    def next_street():
+        nonlocal current_street
+        if current_street >= len(street_order):
+            show_result(player_hand, bot_hand, board, pot, log)
+        else:
+            player_decision_ui(street_order[current_street], board_progression[current_street])
+            current_street += 1
+
+    def player_decision_ui(street, visible_board):
+        global player_stack, bot_stack
+        nonlocal pot
+
+        clear_output()
+        print(f"\n--- {street.upper()} ---")
+        if street != 'preflop':
+            print(f"Board: {visible_board}")
+        print(f"Your hand: {player_hand} (strength: {get_strength(player_hand)})")
+        print(f"Pot: {pot} | Your stack: {player_stack} | Bot stack: {bot_stack}\n")
+
+        texture = classify_board(visible_board)
+        decision = bot_decision(street, bot_strength, texture)
+        if isinstance(decision, tuple):
+            bot_action, size = decision
+        else:
+            bot_action, size = decision, 0
+
+        if bot_action == 'fold':
+            log.append(f"Bot {street}: fold")
+            print("Bot folds. You win the pot.")
+            player_stack += pot
+            show_result(player_hand, bot_hand, board, pot, log)
+            return
+        elif bot_action in ['bet', 'bluff']:
+            bot_bet = max(int(BIG_BLIND * size), MIN_BET)
+            bot_stack -= bot_bet
+            pot += bot_bet
+            log.append(f"Bot {street}: {bot_action} {bot_bet}")
+        else:
+            bot_bet = 0
+            log.append(f"Bot {street}: {bot_action}")
+
+        print(f"Bot action: {bot_action} {bot_bet if bot_bet else ''}")
+
+        def on_click(choice):
+            global player_stack, bot_stack
+            nonlocal pot
+            if choice == "Fold":
+                log.append("Player folds. Bot wins the pot.")
+                bot_stack += pot
+                show_result(player_hand, bot_hand, board, pot, log)
+            elif choice == "Call":
+                player_stack -= bot_bet
+                pot += bot_bet
+                next_street()
+            elif choice == "Raise":
+                raise_amt = max(bot_bet * 2, MIN_BET)
+                player_stack -= raise_amt
+                pot += raise_amt
+                log.append(f"Player raises to {raise_amt}")
+                next_street()
+
+        fold_btn = widgets.Button(description="Fold")
+        call_btn = widgets.Button(description="Call")
+        raise_btn = widgets.Button(description="Raise")
+        fold_btn.on_click(lambda b: on_click("Fold"))
+        call_btn.on_click(lambda b: on_click("Call"))
+        raise_btn.on_click(lambda b: on_click("Raise"))
+        display(widgets.HBox([fold_btn, call_btn, raise_btn]))
+
+    next_street()
+
+def show_result(player_hand, bot_hand, board, pot, log):
+    global player_stack, bot_stack
+    p_score = get_strength(player_hand)
+    b_score = get_strength(bot_hand)
+    print("\n--- SHOWDOWN ---")
+    print(f"Board: {board}")
+    print(f"Your hand: {player_hand} ({p_score})")
+    print(f"Bot hand: {bot_hand} ({b_score})")
+
+    if abs(p_score - b_score) < 0.01:
+        print("Split pot.")
+        player_stack += pot // 2
+        bot_stack += pot // 2
+    elif p_score > b_score:
+        print("You win the pot!")
+        player_stack += pot
+    else:
+        print("Bot wins the pot.")
+        bot_stack += pot
+
+    print(f"\nPlayer stack: {player_stack} bb")
+    print(f"Bot stack: {bot_stack} bb")
+    print("\n--- Actions ---")
+    for line in log:
+        print(line)
+
+    btn = widgets.Button(description="Next Hand")
+    btn.on_click(lambda b: play_hand())
+    display(btn)
+
+# Start the game
+play_hand()
