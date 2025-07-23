@@ -4,7 +4,7 @@ from IPython.display import display, clear_output
 from itertools import combinations
 from treys import Card, Evaluator
 import joblib
-import pandas as pd 
+import pandas as pd
 
 # Constants
 STARTING_STACK = 100
@@ -102,7 +102,7 @@ def bot_decision(street, strength, texture, pot):
     else:
         # Model-based logic for postflop
         street_id = {"flop": 1, "turn": 2, "river": 3}[street]
-        
+
         # Use a DataFrame with column names to avoid the sklearn warning
         input_df = pd.DataFrame([{
             "hand_strength": strength,
@@ -112,7 +112,7 @@ def bot_decision(street, strength, texture, pot):
             "pot_size": pot,
             "street_id": street_id
         }])
-        
+
         pred = model.predict(input_df)[0]
         return le.inverse_transform([pred])[0]
 
@@ -195,21 +195,41 @@ def play_hand():
         bot_strength = get_strength(bot_hand, visible_board if street != 'preflop' else None, street)
         texture = classify_board(visible_board)
         decision = bot_decision(street, bot_strength, texture, pot)
-        bot_bet = 0
+        if isinstance(decision, tuple):
+            bot_action, size = decision
+        else:
+            bot_action, size = decision, 0
 
-        if decision in ['bet', 'bluff']:
-            bot_bet = min(bot_stack, max(int(pot * 0.5), MIN_BET))
+        if bot_action == 'fold':
+            log.append(f"Bot {street}: fold")
+            print("Bot folds. You win the pot.")
+            player_stack += pot
+            show_result(player_hand, bot_hand, board, pot, log)
+            return  # 🛑 prevent player buttons from being shown
+
+        elif bot_action in ['bet', 'bluff']:
+            bot_bet = max(int(BIG_BLIND * size), MIN_BET)
+            bot_bet = min(bot_bet, bot_stack)
             bot_stack -= bot_bet
             pot += bot_bet
-            log.append(f"Bot {street}: {decision} {bot_bet}")
+            log.append(f"Bot {street}: {bot_action} {bot_bet}")
         else:
-            log.append(f"Bot {street}: {decision}")
-        print(f"Bot action: {decision} {bot_bet if bot_bet else ''}")
+            bot_bet = 0
+            log.append(f"Bot {street}: {bot_action}")
+        print(f"Bot action: {bot_action} {bot_bet if bot_bet else ''}")
 
         def on_click(choice):
             global player_stack, bot_stack
             nonlocal pot
-            log_player_decision(round(strength, 3), round(texture, 3), player_stack, bot_stack, pot, choice.lower(), street)
+            log_player_decision(
+                round(strength, 3),          # hand_strength
+                round(texture, 3),           # board_texture
+                player_stack,                # player_stack
+                bot_stack,                   # bot_stack
+                pot,                         # pot_size
+                choice.lower(),              # action
+                street                       # street
+            )
             if choice == "Fold":
                 log.append("Player folds. Bot wins the pot.")
                 bot_stack += pot
