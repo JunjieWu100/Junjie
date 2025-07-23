@@ -1,10 +1,8 @@
-!pip install treys
-!pip install ipywidgets
-import random
+import random, os, csv
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 from itertools import combinations
-from treys import Card, Evaluator, Deck
+from treys import Card, Evaluator
 
 # Constants
 STARTING_STACK = 100
@@ -13,24 +11,20 @@ BIG_BLIND = 2
 MIN_BET = 1
 ranks = '23456789TJQKA'
 suits = 'cdhs'
-
 evaluator = Evaluator()
 
-# Convert string cards to treys format
+# Utilities
 def to_treys(cards):
     return [Card.new(c[0] + c[1]) for c in cards]
 
-# Monte Carlo equity estimation
-def monte_carlo_strength(player_cards, board, iterations=1000):
+def monte_carlo_strength(player_cards, board, iterations=500):
     deck = [r + s for r in ranks for s in suits]
     known = player_cards + board
     for c in known:
         deck.remove(c)
-
     wins = ties = 0
     player = to_treys(player_cards)
     board_treys = to_treys(board)
-
     for _ in range(iterations):
         random.shuffle(deck)
         opp_cards = [deck[0], deck[1]]
@@ -41,75 +35,32 @@ def monte_carlo_strength(player_cards, board, iterations=1000):
             wins += 1
         elif score_p == score_o:
             ties += 1
+    return round((wins + ties / 2) / iterations, 3)
 
-    total = iterations
-    return round((wins + ties / 2) / total, 3)
+def classify_board(board):
+    high_cards = sum(1 for c in board if c[0] in '89TJQKA')
+    suits_count = {s: 0 for s in suits}
+    ranks_count = {r: 0 for r in ranks}
+    for c in board:
+        suits_count[c[1]] += 1
+        ranks_count[c[0]] += 1
+    flush = any(v >= 3 for v in suits_count.values())
+    pair = any(v >= 2 for v in ranks_count.values())
+    return 0.8 if flush or pair or high_cards >= 3 else 0.6
 
-# Fast hand strength for preflop/flop/turn
-def evaluate_5card_hand(hand):
-    values = sorted([ranks.index(c[0]) for c in hand], reverse=True)
-    suits_ = [c[1] for c in hand]
-    flush = len(set(suits_)) == 1
-    straight = all(values[i] - 1 == values[i + 1] for i in range(len(values) - 1))
-    counts = {v: values.count(v) for v in set(values)}
-    count_vals = sorted(counts.values(), reverse=True)
-
-    if flush and straight:
-        if values[0] == 12 and values[1] == 11:
-            return 9
-        return 8
-    elif 4 in count_vals:
-        return 7
-    elif 3 in count_vals and 2 in count_vals:
-        return 6
-    elif flush:
-        return 5
-    elif straight:
-        return 4
-    elif 3 in count_vals:
-        return 3
-    elif count_vals.count(2) == 2:
-        return 2
-    elif 2 in count_vals:
-        return 1 + max(values) / 100
-    else:
-        return 0 + max(values) / 100
-
-def evaluate_postflop_strength(hand, board):
-    best_score = 0
-    for combo in combinations(hand + board, 5):
-        score = evaluate_5card_hand(combo)
-        best_score = max(best_score, score)
-    return round(best_score / 9, 3)
-
-# Mixed evaluation logic
-def get_strength(cards, board=None, street="preflop"):
-    if not board:
-        return preflop_map.get(get_hand_key(cards), 0.4)
-    elif street == "river":
-        return monte_carlo_strength(cards, board)
-    else:
-        return evaluate_postflop_strength(cards, board)
-
-# Hand label
-def get_hand_rank_name(cards, board):
-    player = to_treys(cards)
-    board_treys = to_treys(board)
-    rank_class = evaluator.get_rank_class(evaluator.evaluate(board_treys, player))
-    return evaluator.class_to_string(rank_class)
-
-# Preflop strength map
+# Preflop hand strength
 def generate_strength_map():
     strength_map = {}
-    all_hands = []
     for r1 in ranks:
         for r2 in ranks:
             if r1 == r2:
-                all_hands.append(r1 + r2)
+                key = r1 + r2
             else:
-                all_hands.append(r1 + r2 + 's')
-                all_hands.append(r1 + r2 + 'o')
-    unique_hands = list(set(all_hands))
+                key = ''.join(sorted([r1, r2], reverse=True)) + 's'
+                strength_map[key] = 0
+                key = ''.join(sorted([r1, r2], reverse=True)) + 'o'
+            strength_map[key] = 0
+    unique_hands = list(strength_map.keys())
     unique_hands.sort(key=lambda h: (ranks.index(h[0]), ranks.index(h[1])), reverse=True)
     for i, h in enumerate(unique_hands):
         strength_map[h] = round(1.0 - i / len(unique_hands), 3)
@@ -124,19 +75,10 @@ def get_hand_key(cards):
 
 preflop_map = generate_strength_map()
 
-# Bot decision
-def classify_board(board):
-    high_cards = sum(1 for c in board if c[0] in '89TJQKA')
-    suits_count = {s: 0 for s in suits}
-    ranks_count = {r: 0 for r in ranks}
-    for c in board:
-        suits_count[c[1]] += 1
-        ranks_count[c[0]] += 1
-    flush = any(v >= 3 for v in suits_count.values())
-    pair = any(v >= 2 for v in ranks_count.values())
-    if flush or pair or high_cards >= 3:
-        return 0.8
-    return 0.6
+def get_strength(cards, board=None, street="preflop"):
+    if not board:
+        return preflop_map.get(get_hand_key(cards), 0.4)
+    return monte_carlo_strength(cards, board)
 
 def bot_decision(street, strength, texture):
     if street == 'preflop':
@@ -150,19 +92,25 @@ def bot_decision(street, strength, texture):
             return 'bet', round(random.uniform(0.3, 0.5), 2)
         elif 0.5 <= strength < 0.8:
             return 'bet', round(random.uniform(0.75, 1.0), 2)
-        elif texture == 0.8:
-            if random.random() < 0.3:
-                return 'bluff', round(random.uniform(0.3, 0.5), 2)
+        elif texture == 0.8 and random.random() < 0.3:
+            return 'bluff', round(random.uniform(0.3, 0.5), 2)
         return 'check', 0
 
-# Game loop
+def log_player_decision(row):
+    file_exists = os.path.isfile("player_training_data.csv")
+    with open("player_training_data.csv", mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=row.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+# Game state
 player_stack = STARTING_STACK
 bot_stack = STARTING_STACK
 dealer_button = 0
 
 def play_hand():
     global player_stack, bot_stack, dealer_button
-
     if player_stack <= 0:
         player_stack = STARTING_STACK
         print("Player rebuys to 100bb.")
@@ -221,7 +169,7 @@ def play_hand():
         if isinstance(decision, tuple):
             bot_action, size = decision
         else:
-            bot_action, size = 0, 0
+            bot_action, size = decision, 0
 
         if bot_action == 'fold':
             log.append(f"Bot {street}: fold")
@@ -243,6 +191,15 @@ def play_hand():
         def on_click(choice):
             global player_stack, bot_stack
             nonlocal pot
+            log_player_decision({
+                "street": street,
+                "hand_strength": round(strength, 3),
+                "board_texture": texture,
+                "player_stack": player_stack,
+                "bot_stack": bot_stack,
+                "pot_size": pot,
+                "action": choice.lower()
+            })
             if choice == "Fold":
                 log.append("Player folds. Bot wins the pot.")
                 bot_stack += pot
@@ -272,13 +229,10 @@ def show_result(player_hand, bot_hand, board, pot, log):
     global player_stack, bot_stack
     p_score = monte_carlo_strength(player_hand, board)
     b_score = monte_carlo_strength(bot_hand, board)
-    p_rank_name = get_hand_rank_name(player_hand, board)
-    b_rank_name = get_hand_rank_name(bot_hand, board)
-
     print("\n--- SHOWDOWN ---")
     print(f"Board: {board}")
-    print(f"Your hand: {player_hand} ({p_score}, {p_rank_name})")
-    print(f"Bot hand: {bot_hand} ({b_score}, {b_rank_name})")
+    print(f"Your hand: {player_hand} ({p_score})")
+    print(f"Bot hand: {bot_hand} ({b_score})")
 
     if abs(p_score - b_score) < 0.01:
         print("Split pot.")
@@ -303,4 +257,3 @@ def show_result(player_hand, bot_hand, board, pot, log):
 
 # Start the game
 play_hand()
-
