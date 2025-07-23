@@ -3,6 +3,8 @@ import ipywidgets as widgets
 from IPython.display import display, clear_output
 from itertools import combinations
 from treys import Card, Evaluator
+import joblib
+import pandas as pd 
 
 # Constants
 STARTING_STACK = 100
@@ -12,6 +14,15 @@ MIN_BET = 1
 ranks = '23456789TJQKA'
 suits = 'cdhs'
 evaluator = Evaluator()
+
+# Try loading model
+try:
+    model = joblib.load("player_model.pkl")
+    le = joblib.load("label_encoder.pkl")
+except:
+    model = None
+    le = None
+    print("⚠️ No trained model found. Bot will fallback to basic logic.")
 
 # Utilities
 def to_treys(cards):
@@ -48,18 +59,17 @@ def classify_board(board):
     pair = any(v >= 2 for v in ranks_count.values())
     return 0.8 if flush or pair or high_cards >= 3 else 0.6
 
-# Preflop hand strength
 def generate_strength_map():
     strength_map = {}
     for r1 in ranks:
         for r2 in ranks:
             if r1 == r2:
                 key = r1 + r2
-            else:
-                key = ''.join(sorted([r1, r2], reverse=True)) + 's'
                 strength_map[key] = 0
-                key = ''.join(sorted([r1, r2], reverse=True)) + 'o'
-            strength_map[key] = 0
+            else:
+                for suited in ['s', 'o']:
+                    key = ''.join(sorted([r1, r2], reverse=True)) + suited
+                    strength_map[key] = 0
     unique_hands = list(strength_map.keys())
     unique_hands.sort(key=lambda h: (ranks.index(h[0]), ranks.index(h[1])), reverse=True)
     for i, h in enumerate(unique_hands):
@@ -80,29 +90,48 @@ def get_strength(cards, board=None, street="preflop"):
         return preflop_map.get(get_hand_key(cards), 0.4)
     return monte_carlo_strength(cards, board)
 
-def bot_decision(street, strength, texture):
-    if street == 'preflop':
+def bot_decision(street, strength, texture, pot):
+    if street == "preflop":
+        # Rule-based logic for preflop
         if strength >= 0.7:
-            return 'raise'
+            return "raise"
         elif strength >= 0.5:
-            return 'call'
-        return 'fold'
+            return "call"
+        else:
+            return "fold"
     else:
-        if strength >= 0.8:
-            return 'bet', round(random.uniform(0.3, 0.5), 2)
-        elif 0.5 <= strength < 0.8:
-            return 'bet', round(random.uniform(0.75, 1.0), 2)
-        elif texture == 0.8 and random.random() < 0.3:
-            return 'bluff', round(random.uniform(0.3, 0.5), 2)
-        return 'check', 0
+        # Model-based logic for postflop
+        street_id = {"flop": 1, "turn": 2, "river": 3}[street]
+        
+        # Use a DataFrame with column names to avoid the sklearn warning
+        input_df = pd.DataFrame([{
+            "hand_strength": strength,
+            "board_texture": texture,
+            "player_stack": player_stack,
+            "bot_stack": bot_stack,
+            "pot_size": pot,
+            "street_id": street_id
+        }])
+        
+        pred = model.predict(input_df)[0]
+        return le.inverse_transform([pred])[0]
 
-def log_player_decision(row):
+def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street):
+    data = {
+        "hand_strength": hand_strength,
+        "board_texture": board_texture,
+        "player_stack": player_stack,
+        "bot_stack": bot_stack,
+        "pot_size": pot,
+        "action": action,
+        "street_id": {"preflop": 0, "flop": 1, "turn": 2, "river": 3}[street]
+    }
     file_exists = os.path.isfile("player_training_data.csv")
-    with open("player_training_data.csv", mode='a', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=row.keys())
+    with open("player_training_data.csv", "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=data.keys())
         if not file_exists:
             writer.writeheader()
-        writer.writerow(row)
+        writer.writerow(data)
 
 # Game state
 player_stack = STARTING_STACK
@@ -165,41 +194,22 @@ def play_hand():
 
         bot_strength = get_strength(bot_hand, visible_board if street != 'preflop' else None, street)
         texture = classify_board(visible_board)
-        decision = bot_decision(street, bot_strength, texture)
-        if isinstance(decision, tuple):
-            bot_action, size = decision
-        else:
-            bot_action, size = decision, 0
+        decision = bot_decision(street, bot_strength, texture, pot)
+        bot_bet = 0
 
-        if bot_action == 'fold':
-            log.append(f"Bot {street}: fold")
-            print("Bot folds. You win the pot.")
-            player_stack += pot
-            show_result(player_hand, bot_hand, board, pot, log)
-            return
-        elif bot_action in ['bet', 'bluff']:
-            bot_bet = max(int(BIG_BLIND * size), MIN_BET)
-            bot_bet = min(bot_bet, bot_stack)
+        if decision in ['bet', 'bluff']:
+            bot_bet = min(bot_stack, max(int(pot * 0.5), MIN_BET))
             bot_stack -= bot_bet
             pot += bot_bet
-            log.append(f"Bot {street}: {bot_action} {bot_bet}")
+            log.append(f"Bot {street}: {decision} {bot_bet}")
         else:
-            bot_bet = 0
-            log.append(f"Bot {street}: {bot_action}")
-        print(f"Bot action: {bot_action} {bot_bet if bot_bet else ''}")
+            log.append(f"Bot {street}: {decision}")
+        print(f"Bot action: {decision} {bot_bet if bot_bet else ''}")
 
         def on_click(choice):
             global player_stack, bot_stack
             nonlocal pot
-            log_player_decision({
-                "street": street,
-                "hand_strength": round(strength, 3),
-                "board_texture": texture,
-                "player_stack": player_stack,
-                "bot_stack": bot_stack,
-                "pot_size": pot,
-                "action": choice.lower()
-            })
+            log_player_decision(round(strength, 3), round(texture, 3), player_stack, bot_stack, pot, choice.lower(), street)
             if choice == "Fold":
                 log.append("Player folds. Bot wins the pot.")
                 bot_stack += pot
@@ -255,5 +265,5 @@ def show_result(player_hand, bot_hand, board, pot, log):
     btn.on_click(lambda b: play_hand())
     display(btn)
 
-# Start the game
+# 👇 Start one hand
 play_hand()
