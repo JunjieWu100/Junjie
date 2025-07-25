@@ -1,4 +1,4 @@
-!pip install treys
+#!pip install treys
 import random, os, csv
 import pandas as pd
 import ipywidgets as widgets
@@ -15,14 +15,20 @@ ranks = '23456789TJQKA'
 suits = 'cdhs'
 evaluator = Evaluator()
 
-# Load model
+# Load models
 try:
     model = joblib.load("player_model.pkl")
     le = joblib.load("label_encoder.pkl")
 except:
     model = None
     le = None
-    print("⚠️ No trained model found. Bot will fallback to basic logic.")
+    print("⚠️ No trained action model found.")
+
+try:
+    bet_model = joblib.load("bet_size_model.pkl")
+except:
+    bet_model = None
+    print("⚠️ No bet size model found.")
 
 def to_treys(cards):
     return [Card.new(c[0] + c[1]) for c in cards]
@@ -104,6 +110,7 @@ def bot_decision(street, strength, texture, pot):
                 return ("bet", 0.5)
             else:
                 return "check"
+
         street_id = {"flop": 1, "turn": 2, "river": 3}[street]
         input_df = pd.DataFrame([{
             "hand_strength": strength,
@@ -115,16 +122,18 @@ def bot_decision(street, strength, texture, pot):
         }])
         pred = model.predict(input_df)[0]
         action = le.inverse_transform([pred])[0]
+
         if action == "fold":
             return "check"
-        elif action == "bet":
-            return ("bet", 1.0)
-        elif action == "bluff":
-            return ("bet", 0.5)
+        elif action in ["bet", "bluff", "raise"] and bet_model:
+            size = bet_model.predict(input_df)[0]
+            size = min(max(size, 0.1), 1.0)
+            print(f"🤖 Bot predicts bet size: {round(size, 3)} pot")
+            return ("bet", size)
         else:
             return action
 
-def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street):
+def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street, bet_size=0.0):
     data = {
         "hand_strength": hand_strength,
         "board_texture": board_texture,
@@ -132,7 +141,8 @@ def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, p
         "bot_stack": bot_stack,
         "pot_size": pot,
         "action": action,
-        "street_id": {"preflop": 0, "flop": 1, "turn": 2, "river": 3}[street]
+        "street_id": {"preflop": 0, "flop": 1, "turn": 2, "river": 3}[street],
+        "bet_size": bet_size
     }
     file_exists = os.path.isfile("player_training_data.csv")
     with open("player_training_data.csv", "a", newline="") as f:
@@ -229,40 +239,64 @@ def play_hand():
             bot_stack -= bot_bet
             pot += bot_bet
             log.append(f"Bot {street}: bet {bot_bet}")
+        elif bot_action == 'fold':
+            bot_bet = 0
+            log.append(f"Bot {street}: folds")
+            print("Bot folds. You win the pot.")
+            player_stack += pot
+            show_result(player_hand, bot_hand, board, pot, log)
+            return
         else:
             bot_bet = 0
             log.append(f"Bot {street}: {bot_action}")
         print(f"Bot action: {bot_action} {bot_bet if bot_bet else ''}")
 
-        def on_click(choice):
+        def on_click(choice, custom_bet_fraction=None):
             global player_stack, bot_stack
             nonlocal pot
-            log_player_decision(round(strength, 3), round(texture, 3),
-                                player_stack, bot_stack, pot, choice.lower(), street)
             if choice == "Fold":
+                log_player_decision(round(strength, 3), round(texture, 3),
+                                    player_stack, bot_stack, pot,
+                                    "fold", street, 0.0)
                 log.append("Player folds. Bot wins the pot.")
                 bot_stack += pot
                 show_result(player_hand, bot_hand, board, pot, log)
             elif choice == "Call":
                 player_stack -= bot_bet
                 pot += bot_bet
+                log_player_decision(round(strength, 3), round(texture, 3),
+                                    player_stack, bot_stack, pot,
+                                    "call", street, 0.0)
                 next_street()
-            elif choice == "Raise":
-                raise_amt = min(player_stack, max(bot_bet * 2, MIN_BET))
-                player_stack -= raise_amt
-                pot += raise_amt
-                log.append(f"Player raises to {raise_amt}")
+            elif choice == "CustomBet" and custom_bet_fraction is not None:
+                bet_amount = int(pot * custom_bet_fraction)
+                bet_amount = max(bet_amount, MIN_BET)
+                bet_amount = min(bet_amount, player_stack)
+                player_stack -= bet_amount
+                pot += bet_amount
+                log.append(f"Player bets {bet_amount}")
+                log_player_decision(round(strength, 3), round(texture, 3),
+                                    player_stack, bot_stack, pot,
+                                    "raise", street, custom_bet_fraction)
                 next_street()
 
+        # UI Buttons
         fold_btn = widgets.Button(description="Fold")
         call_btn = widgets.Button(description="Call")
-        raise_btn = widgets.Button(description="Raise")
+        pot25_btn = widgets.Button(description="Bet 0.25 Pot")
+        pot50_btn = widgets.Button(description="Bet 0.5 Pot")
+        pot75_btn = widgets.Button(description="Bet 0.75 Pot")
+
         fold_btn.on_click(lambda b: on_click("Fold"))
         call_btn.on_click(lambda b: on_click("Call"))
-        raise_btn.on_click(lambda b: on_click("Raise"))
-        display(widgets.HBox([fold_btn, call_btn, raise_btn]))
+        pot25_btn.on_click(lambda b: on_click("CustomBet", 0.25))
+        pot50_btn.on_click(lambda b: on_click("CustomBet", 0.5))
+        pot75_btn.on_click(lambda b: on_click("CustomBet", 0.75))
+
+        display(widgets.HBox([fold_btn, call_btn, pot25_btn, pot50_btn, pot75_btn]))
 
     next_street()
+
 
 def show_result(player_hand, bot_hand, board, pot, log):
     global player_stack, bot_stack
@@ -294,5 +328,5 @@ def show_result(player_hand, bot_hand, board, pot, log):
     btn.on_click(lambda b: play_hand())
     display(btn)
 
-# Start game
+# Start the game
 play_hand()
