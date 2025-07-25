@@ -1,3 +1,4 @@
+#!pip install treys
 import random, os, csv
 import ipywidgets as widgets
 from IPython.display import display, clear_output
@@ -92,7 +93,7 @@ def get_strength(cards, board=None, street="preflop"):
 
 def bot_decision(street, strength, texture, pot):
     if street == "preflop":
-        # Rule-based logic for preflop
+        # Rule-based preflop logic
         if strength >= 0.7:
             return "raise"
         elif strength >= 0.5:
@@ -100,10 +101,11 @@ def bot_decision(street, strength, texture, pot):
         else:
             return "fold"
     else:
-        # Model-based logic for postflop
-        street_id = {"flop": 1, "turn": 2, "river": 3}[street]
+        # Post-flop: Use trained model if available
+        if model is None:
+            return "call"  # fallback to safe option
 
-        # Use a DataFrame with column names to avoid the sklearn warning
+        street_id = {"flop": 1, "turn": 2, "river": 3}[street]
         input_df = pd.DataFrame([{
             "hand_strength": strength,
             "board_texture": texture,
@@ -114,7 +116,14 @@ def bot_decision(street, strength, texture, pot):
         }])
 
         pred = model.predict(input_df)[0]
-        return le.inverse_transform([pred])[0]
+        action = le.inverse_transform([pred])[0]
+
+        # 🛑 Prevent all folds post-flop (flop, turn, river)
+        if street in {"flop", "turn", "river"} and action == "fold":
+            return "call"
+
+        return action
+
 
 def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street):
     data = {
