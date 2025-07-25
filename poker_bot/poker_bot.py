@@ -1,4 +1,5 @@
-#!pip install treys
+#uncomment all the install commands if running for the first time
+#!pip install treys ipywidgets
 import random, os, csv
 import ipywidgets as widgets
 from IPython.display import display, clear_output
