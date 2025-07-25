@@ -94,44 +94,69 @@ def get_strength(cards, board=None, street="preflop"):
         return preflop_map.get(get_hand_key(cards), 0.4)
     return monte_carlo_strength(cards, board)
 
-def bot_decision(street, strength, texture, pot):
-    if street == "preflop":
-        if strength >= 0.7:
-            return "raise"
-        elif strength >= 0.5:
-            return "call"
+def bot_decision(street, strength, texture, pot, facing_bet=False):
+    # Street encoding
+    street_id = {"preflop": 0, "flop": 1, "turn": 2, "river": 3}[street]
+
+    # Feature vector
+    input_df = pd.DataFrame([{
+        "hand_strength": strength,
+        "board_texture": texture,
+        "player_stack": player_stack,
+        "bot_stack": bot_stack,
+        "pot_size": pot,
+        "street_id": street_id
+    }])
+
+    # Try to use bot's own action model first
+    try:
+        bot_model = joblib.load("bot_action_model.pkl")
+        bot_encoder = joblib.load("bot_action_encoder.pkl")
+        action_pred = bot_model.predict(input_df)[0]
+        action = bot_encoder.inverse_transform([action_pred])[0]
+    except:
+        action = None
+
+    # If no bot model, fallback to player model
+    if action is None or action not in ["fold", "call", "check", "bet", "raise", "bluff"]:
+        if model and le:
+            action_pred = model.predict(input_df)[0]
+            action = le.inverse_transform([action_pred])[0]
         else:
-            return "fold"
-    else:
-        if model is None:
-            if strength >= 0.7:
-                return ("bet", 1.0)
-            elif strength >= 0.5:
-                return ("bet", 0.5)
+            # Last resort: heuristic fallback
+            if street == "preflop":
+                if strength >= 0.7:
+                    return "raise"
+                elif strength >= 0.5:
+                    return "call"
+                else:
+                    return "fold" if facing_bet else "check"
             else:
-                return "check"
+                if strength >= 0.7:
+                    return ("bet", 1.0)
+                elif strength >= 0.5:
+                    return ("bet", 0.5)
+                else:
+                    return "check"
 
-        street_id = {"flop": 1, "turn": 2, "river": 3}[street]
-        input_df = pd.DataFrame([{
-            "hand_strength": strength,
-            "board_texture": texture,
-            "player_stack": player_stack,
-            "bot_stack": bot_stack,
-            "pot_size": pot,
-            "street_id": street_id
-        }])
-        pred = model.predict(input_df)[0]
-        action = le.inverse_transform([pred])[0]
+    # Adjust folding logic when facing a bet
+    if action == "fold":
+        return "fold" if facing_bet else "check"
 
-        if action == "fold":
-            return "check"
-        elif action in ["bet", "bluff", "raise"] and bet_model:
+    # Predict bet size if betting-related action
+    if action in ["bet", "raise", "bluff"]:
+        try:
+            bet_model = joblib.load("bot_bet_size_model.pkl")
             size = bet_model.predict(input_df)[0]
-            size = min(max(size, 0.1), 1.0)
+            size = min(max(size, 0.1), 1.5)  # Clamp between 0.1 and 1.5 pot
             print(f"🤖 Bot predicts bet size: {round(size, 3)} pot")
             return ("bet", size)
-        else:
-            return action
+        except:
+            return ("bet", 0.5)
+
+    return action
+
+
 
 def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street, bet_size=0.0):
     data = {
@@ -150,6 +175,25 @@ def log_player_decision(hand_strength, board_texture, player_stack, bot_stack, p
         if not file_exists:
             writer.writeheader()
         writer.writerow(data)
+
+def log_bot_decision(hand_strength, board_texture, player_stack, bot_stack, pot, action, street, bet_size=0.0):
+    data = {
+        "hand_strength": hand_strength,
+        "board_texture": board_texture,
+        "player_stack": player_stack,
+        "bot_stack": bot_stack,
+        "pot_size": pot,
+        "action": action,
+        "street_id": {"preflop": 0, "flop": 1, "turn": 2, "river": 3}[street],
+        "bet_size": bet_size
+    }
+    file_exists = os.path.isfile("bot_training_data.csv")
+    with open("bot_training_data.csv", "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=data.keys())
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(data)
+
 
 # Game state
 player_stack = STARTING_STACK
@@ -211,14 +255,30 @@ def play_hand():
 
         bot_strength = get_strength(bot_hand, visible_board if street != 'preflop' else None, street)
         texture = classify_board(visible_board)
-        decision = bot_decision(street, bot_strength, texture, pot)
+
+        # Bot always acts first for simplicity
+        facing_bet = False
+        decision = bot_decision(street, bot_strength, texture, pot, facing_bet=facing_bet)
 
         if isinstance(decision, tuple):
             bot_action, size = decision
         else:
             bot_action, size = decision, 0
 
-        if bot_action == 'check':
+        # ✅ Log bot decision
+        log_bot_decision(
+            round(bot_strength, 3), round(texture, 3),
+            player_stack, bot_stack, pot,
+            bot_action, street,
+            bet_size=round(size, 3) if bot_action in ['bet', 'raise', 'bluff'] else 0.0
+        )
+
+        if bot_action == 'fold':
+            log.append(f"Bot {street}: folds")
+            player_stack += pot
+            show_result(player_hand, bot_hand, board, pot, log, bot_folded=True)
+            return
+        elif bot_action == 'check':
             bot_bet = 0
             log.append(f"Bot {street}: check")
         elif bot_action == 'call':
@@ -239,84 +299,84 @@ def play_hand():
             bot_stack -= bot_bet
             pot += bot_bet
             log.append(f"Bot {street}: bet {bot_bet}")
-        elif bot_action == 'fold':
-            bot_bet = 0
-            log.append(f"Bot {street}: folds")
-            print("Bot folds. You win the pot.")
-            player_stack += pot
-            show_result(player_hand, bot_hand, board, pot, log)
-            return
         else:
             bot_bet = 0
             log.append(f"Bot {street}: {bot_action}")
         print(f"Bot action: {bot_action} {bot_bet if bot_bet else ''}")
 
-        def on_click(choice, custom_bet_fraction=None):
+        def on_click(_, choice, size=0.0):
             global player_stack, bot_stack
             nonlocal pot
+
+            log_player_decision(
+                round(strength, 3), round(texture, 3),
+                player_stack, bot_stack, pot,
+                choice.lower(), street,
+                bet_size=size if choice == "Raise" else 0.0
+            )
+
             if choice == "Fold":
-                log_player_decision(round(strength, 3), round(texture, 3),
-                                    player_stack, bot_stack, pot,
-                                    "fold", street, 0.0)
                 log.append("Player folds. Bot wins the pot.")
                 bot_stack += pot
                 show_result(player_hand, bot_hand, board, pot, log)
+
             elif choice == "Call":
                 player_stack -= bot_bet
                 pot += bot_bet
-                log_player_decision(round(strength, 3), round(texture, 3),
-                                    player_stack, bot_stack, pot,
-                                    "call", street, 0.0)
-                next_street()
-            elif choice == "CustomBet" and custom_bet_fraction is not None:
-                bet_amount = int(pot * custom_bet_fraction)
-                bet_amount = max(bet_amount, MIN_BET)
-                bet_amount = min(bet_amount, player_stack)
-                player_stack -= bet_amount
-                pot += bet_amount
-                log.append(f"Player bets {bet_amount}")
-                log_player_decision(round(strength, 3), round(texture, 3),
-                                    player_stack, bot_stack, pot,
-                                    "raise", street, custom_bet_fraction)
                 next_street()
 
-        # UI Buttons
+            elif choice == "Raise":
+                raise_amt = int(pot * size)
+                raise_amt = max(raise_amt, MIN_BET)
+                raise_amt = min(raise_amt, player_stack)
+                player_stack -= raise_amt
+                pot += raise_amt
+                log.append(f"Player bets {raise_amt} ({size}x pot)")
+                next_street()
+
+        # Create buttons
         fold_btn = widgets.Button(description="Fold")
         call_btn = widgets.Button(description="Call")
-        pot25_btn = widgets.Button(description="Bet 0.25 Pot")
-        pot50_btn = widgets.Button(description="Bet 0.5 Pot")
-        pot75_btn = widgets.Button(description="Bet 0.75 Pot")
+        bet_025_btn = widgets.Button(description="Bet 0.25x Pot")
+        bet_075_btn = widgets.Button(description="Bet 0.75x Pot")
+        bet_150_btn = widgets.Button(description="Bet 1.5x Pot")
 
-        fold_btn.on_click(lambda b: on_click("Fold"))
-        call_btn.on_click(lambda b: on_click("Call"))
-        pot25_btn.on_click(lambda b: on_click("CustomBet", 0.25))
-        pot50_btn.on_click(lambda b: on_click("CustomBet", 0.5))
-        pot75_btn.on_click(lambda b: on_click("CustomBet", 0.75))
+        # Attach click handlers
+        fold_btn.on_click(lambda b: on_click(b, "Fold"))
+        call_btn.on_click(lambda b: on_click(b, "Call"))
+        bet_025_btn.on_click(lambda b: on_click(b, "Raise", 0.25))
+        bet_075_btn.on_click(lambda b: on_click(b, "Raise", 0.75))
+        bet_150_btn.on_click(lambda b: on_click(b, "Raise", 1.5))
 
-        display(widgets.HBox([fold_btn, call_btn, pot25_btn, pot50_btn, pot75_btn]))
+        # Display buttons
+        display(widgets.HBox([fold_btn, call_btn, bet_025_btn, bet_075_btn, bet_150_btn]))
+
 
     next_street()
 
-
-def show_result(player_hand, bot_hand, board, pot, log):
+def show_result(player_hand, bot_hand, board, pot, log, bot_folded=False):
     global player_stack, bot_stack
-    p_score = monte_carlo_strength(player_hand, board)
-    b_score = monte_carlo_strength(bot_hand, board)
-    print("\n--- SHOWDOWN ---")
-    print(f"Board: {board}")
-    print(f"Your hand: {player_hand} ({p_score})")
-    print(f"Bot hand: {bot_hand} ({b_score})")
-
-    if abs(p_score - b_score) < 0.01:
-        print("Split pot.")
-        player_stack += pot // 2
-        bot_stack += pot // 2
-    elif p_score > b_score:
-        print("You win the pot!")
+    if bot_folded:
+        print("\nBot folded. You win the pot!")
         player_stack += pot
     else:
-        print("Bot wins the pot.")
-        bot_stack += pot
+        p_score = monte_carlo_strength(player_hand, board)
+        b_score = monte_carlo_strength(bot_hand, board)
+        print("\n--- SHOWDOWN ---")
+        print(f"Board: {board}")
+        print(f"Your hand: {player_hand} ({p_score})")
+        print(f"Bot hand: {bot_hand} ({b_score})")
+
+        if abs(p_score - b_score) < 0.01:
+            print("Split pot.")
+            player_stack += pot // 2
+            bot_stack += pot // 2
+        elif p_score > b_score:
+            print("You win the pot!")
+            player_stack += pot
+        else:
+            print("Bot wins the pot.")
+            bot_stack += pot
 
     print(f"\nPlayer stack: {player_stack} bb")
     print(f"Bot stack: {bot_stack} bb")
